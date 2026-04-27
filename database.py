@@ -27,11 +27,8 @@ def add_user(user_id, username):
 def has_active_appointment(user_id):
     conn = sqlite3.connect('tattoo_studio.db')
     cursor = conn.cursor()
-    # Проверяем, есть ли хоть одна запись со статусом 'confirmed'
     cursor.execute("SELECT id FROM appointments WHERE user_id = ? AND status = 'confirmed'", (user_id,))
-    data = cursor.fetchone()
-    conn.close()
-    return data is not None
+    return cursor.fetchone() is not None
 
 def add_appointment(user_id, date, time, service_type, photo_id):
     conn = sqlite3.connect('tattoo_studio.db')

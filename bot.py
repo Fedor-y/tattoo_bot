@@ -27,11 +27,11 @@ class Booking(StatesGroup):
 class AnonMessage(StatesGroup):
     waiting_for_content = State()
 
-# --- БЛОК АДМИН-КОМАНД ---
+# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ АДМИНА ---
 async def send_admin_data(user_id):
     apps = db.get_all_appointments()
     if not apps:
-        await bot.send_message(user_id, "Журнал пуст")
+        await bot.send_message(user_id, "Журнал активных записей пуст.")
         return
     for a in apps:
         client_label = f"@{a[1]}" if a[1] else "Профиль"
@@ -42,13 +42,22 @@ async def send_admin_data(user_id):
 async def send_admin_history(user_id):
     apps = db.get_history_appointments()
     if not apps:
-        await bot.send_message(user_id, "История пуста")
+        await bot.send_message(user_id, "История (архив) пуста.")
         return
     for a in apps:
         client_label = f"@{a[1]}" if a[1] else "Профиль"
         caption = f"АРХИВ\nДата: {a[2]} | Время: {a[3]}\nУслуга: {a[4]}\nКлиент: [{client_label}](tg://user?id={a[0]})"
         await bot.send_photo(user_id, photo=a[5], caption=caption, parse_mode="Markdown", 
                              reply_markup=kb.history_kb(a[0]))
+
+# --- ОБРАБОТЧИКИ КОМАНД ---
+@dp.message(Command("start"))
+async def start(message: types.Message):
+    db.add_user(message.from_user.id, message.from_user.username)
+    if message.from_user.id == ADMIN_ID:
+        await message.answer("Добро пожаловать в админ-панель!", reply_markup=kb.admin_instruction_kb())
+    else:
+        await message.answer("Здарова! Записываемся на тату?", reply_markup=kb.main_menu())
 
 @dp.message(Command("data"))
 async def admin_data_cmd(message: types.Message):
@@ -58,15 +67,20 @@ async def admin_data_cmd(message: types.Message):
 async def admin_history_cmd(message: types.Message):
     if message.from_user.id == ADMIN_ID: await send_admin_history(message.from_user.id)
 
-@dp.message(Command("start"))
-async def start(message: types.Message):
-    db.add_user(message.from_user.id, message.from_user.username)
-    if message.from_user.id == ADMIN_ID:
-        await message.answer("Админ-панель:", reply_markup=kb.admin_instruction_kb())
-    else:
-        await message.answer("Здарова! Записываемся на тату?", reply_markup=kb.main_menu())
+# --- ОБРАБОТЧИКИ КНОПОК АДМИН-ПАНЕЛИ ---
+@dp.callback_query(F.data == "run_data")
+async def run_admin_data(callback: types.CallbackQuery):
+    if callback.from_user.id == ADMIN_ID:
+        await send_admin_data(callback.from_user.id)
+        await callback.answer()
 
-# --- ПРОЦЕСС ЗАПИСИ ---
+@dp.callback_query(F.data == "run_history")
+async def run_admin_history(callback: types.CallbackQuery):
+    if callback.from_user.id == ADMIN_ID:
+        await send_admin_history(callback.from_user.id)
+        await callback.answer()
+
+# --- ПРОЦЕСС ЗАПИСИ (КЛИЕНТ) ---
 @dp.message(F.text == "записаться")
 async def show_prices(message: types.Message):
     if db.has_active_appointment(message.from_user.id):
@@ -83,15 +97,15 @@ async def price_booking(callback: types.CallbackQuery, state: FSMContext):
     today = datetime.now()
     markup = await calendar.start_calendar()
     
-    # ФИКС КНОПОК: РОВНЯЕМ ЦИФРЫ И СКРЫВАЕМ ПРОШЕДШЕЕ
+    current_month_ru = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"][today.month - 1]
+
     for row in markup.inline_keyboard:
         for btn in row:
             digits = re.findall(r'\d+', btn.text)
             if digits:
                 day_val = int(digits[0])
-                # Скрываем цифру, если она прошла (для текущего месяца)
-                if day_val < today.day and "апр" in str(markup).lower(): 
-                    btn.text = "✖" # Вместо пробела ставим крестик, так надежнее
+                if day_val < today.day and current_month_ru in str(markup).lower(): 
+                    btn.text = "✖"
                 else:
                     btn.text = str(day_val)
             elif "Today" in btn.text: btn.text = "Сегодня"
@@ -102,8 +116,6 @@ async def price_booking(callback: types.CallbackQuery, state: FSMContext):
 
 @dp.callback_query(SimpleCalendarCallback.filter(), Booking.choosing_date)
 async def process_date(callback: types.CallbackQuery, callback_data: SimpleCalendarCallback, state: FSMContext):
-    # ПРОВЕРКА НА КРЕСТИК (ПРОШЕДШУЮ ДАТУ)
-    # Ищем текст кнопки в объекте сообщения по колбэку
     clicked_text = ""
     for row in callback.message.reply_markup.inline_keyboard:
         for btn in row:
@@ -155,10 +167,10 @@ async def process_photo(message: types.Message, state: FSMContext):
     
     await bot.send_photo(ADMIN_ID, photo=photo_id, caption=caption, parse_mode="Markdown",
                          reply_markup=kb.admin_action_kb(message.from_user.id, data['booked_date'], data['booked_time'], data['service_type']))
-    await message.answer("Заявка у мастера! Ожидай подтверждения.")
+    await message.answer("Заявка отправлена! Ожидай подтверждения от мастера.")
     await state.clear()
 
-# --- АДМИН-ДЕЙСТВИЯ ---
+# --- АДМИН-РЕШЕНИЯ ПО ЗАЯВКАМ ---
 @dp.callback_query(F.data.startswith("adm_"))
 async def admin_decision(callback: types.CallbackQuery):
     parts = callback.data.split("|")
@@ -168,7 +180,7 @@ async def admin_decision(callback: types.CallbackQuery):
         await bot.send_message(uid, f"Твоя запись на {d} в {t} подтверждена! ✅")
         await callback.message.edit_caption(caption=callback.message.caption + "\n\n✅ ПОДТВЕРЖДЕНО")
     else:
-        await bot.send_message(uid, "К сожалению, мастер отклонил заявку на это время. Попробуй другую дату.")
+        await bot.send_message(uid, "К сожалению, мастер отклонил заявку на это время.")
         await callback.message.edit_caption(caption=callback.message.caption + "\n\n❌ ОТКЛОНЕНО")
 
 @dp.callback_query(F.data.startswith("close_app|"))
@@ -183,7 +195,7 @@ async def delete_app(callback: types.CallbackQuery):
     _, uid, d, t = callback.data.split("|")
     db.delete_appointment(int(uid), d, t)
     await callback.message.edit_caption(caption=callback.message.caption + "\n\n🗑️ УДАЛЕНО")
-    await bot.send_message(int(uid), f"Твоя запись на {d} в {t} была отменена.")
+    await bot.send_message(int(uid), f"Запись на {d} в {t} была отменена.")
 
 # --- ПРОЧЕЕ ---
 @dp.message(F.text == "связь с ОСЧ")
@@ -192,7 +204,7 @@ async def contact(message: types.Message):
 
 @dp.message(F.text == "анон сообщение мастеру")
 async def anon(message: types.Message, state: FSMContext):
-    await message.answer("Напиши сообщение, и я передам его анонимно:")
+    await message.answer("Напиши сообщение анонимно:")
     await state.set_state(AnonMessage.waiting_for_content)
 
 @dp.message(AnonMessage.waiting_for_content)
@@ -200,7 +212,7 @@ async def anon_done(message: types.Message, state: FSMContext):
     await bot.send_message(ADMIN_ID, "Анонимное сообщение мастеру:")
     if message.text: await bot.send_message(ADMIN_ID, message.text)
     if message.photo: await bot.send_photo(ADMIN_ID, message.photo[-1].file_id)
-    await message.answer("Передал!")
+    await message.answer("Отправлено!")
     await state.clear()
 
 async def main():

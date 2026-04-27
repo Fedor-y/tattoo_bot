@@ -13,18 +13,24 @@ def pricing_menu():
         [InlineKeyboardButton(text="Сеанс (20к)", callback_data="price_session")]
     ])
 
+def no_photo_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Нет эскиза", callback_data="no_sketch")]
+    ])
+
 def admin_instruction_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Активные записи", callback_data="run_data")],
         [InlineKeyboardButton(text="История (Архив)", callback_data="run_history")]
     ])
 
-def admin_action_kb(uid, d, t, s):
-    res = f"{uid}|{d}|{t}|{s}"
+def admin_action_kb(uid, d, t, s, photo_id):
+    # photo_id передается в колбэк шестым параметром
+    res = f"{uid}|{d}|{t}|{s}|{photo_id}"
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ ОК", callback_data=f"adm_confirm|{res}"),
          InlineKeyboardButton(text="❌ НЕТ", callback_data=f"adm_reject|{res}")],
-        [InlineKeyboardButton(text="✉ Профиль клиента", url=f"tg://user?id={uid}")]
+        [InlineKeyboardButton(text="✉ Профиль", url=f"tg://user?id={uid}")]
     ])
 
 def admin_manage_kb(uid, d, t):
@@ -41,14 +47,10 @@ def history_kb(uid):
 
 def get_available_time_slots(booked, is_today=False):
     all_s = ["14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00", "00:00"]
-    # Если на этот день уже записан "Сеанс", всё время занято
     if any(b[1] == "Сеанс" for b in booked): return None
-    
     now = datetime.now().strftime("%H:%M")
     available = [s for s in all_s if not (is_today and s <= now) and not any(b[0] == s for b in booked)]
-    
     if not available: return None
-    
     btns = []
     for i in range(0, len(available), 2):
         row = [InlineKeyboardButton(text=available[i], callback_data=f"time_{available[i]}")]

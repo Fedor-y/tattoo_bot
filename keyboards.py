@@ -25,7 +25,7 @@ def admin_instruction_kb():
     ])
 
 def admin_action_kb(uid, d, t, s, photo_id):
-    # photo_id передается в колбэк шестым параметром
+    # ПЕРЕДАЕМ photo_id В CALLBACK СТРОКОЙ
     res = f"{uid}|{d}|{t}|{s}|{photo_id}"
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ ОК", callback_data=f"adm_confirm|{res}"),

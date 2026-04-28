@@ -154,6 +154,8 @@ async def process_no_sketch(callback: types.CallbackQuery, state: FSMContext):
     client = callback.from_user.username or callback.from_user.full_name
     caption = (f"НОВАЯ ЗАЯВКА (БЕЗ ЭСКИЗА)\n\nКлиент: [{client}](tg://user?id={callback.from_user.id})\n"
                f"Услуга: {data['service_type']}\nДата: {data['booked_date']}\nВремя: {data['booked_time']}")
+    
+    # ПЕРЕДАЕМ "None" В КНОПКУ АДМИНА
     await bot.send_message(ADMIN_ID, text=caption, parse_mode="Markdown",
                            reply_markup=kb.admin_action_kb(callback.from_user.id, data['booked_date'], data['booked_time'], data['service_type'], "None"))
     await callback.message.edit_text("Заявка отправлена без эскиза!")
@@ -164,13 +166,17 @@ async def process_photo(message: types.Message, state: FSMContext):
     if not message.photo:
         await message.answer("Жду фото эскиза или нажми кнопку!")
         return
+    
     data = await state.get_data()
-    photo_id = message.photo[-1].file_id
+    photo_id = message.photo[-1].file_id # Берем ID фото
     client = message.from_user.username or message.from_user.full_name
     caption = (f"НОВАЯ ЗАЯВКА\n\nКлиент: [{client}](tg://user?id={message.from_user.id})\n"
                f"Услуга: {data['service_type']}\nДата: {data['booked_date']}\nВремя: {data['booked_time']}")
+    
+    # ПЕРЕДАЕМ photo_id В КНОПКУ АДМИНА
     await bot.send_photo(ADMIN_ID, photo=photo_id, caption=caption, parse_mode="Markdown",
                          reply_markup=kb.admin_action_kb(message.from_user.id, data['booked_date'], data['booked_time'], data['service_type'], photo_id))
+    
     await message.answer("Заявка у мастера! Ожидай подтверждения.")
     await state.clear()
 
@@ -178,8 +184,9 @@ async def process_photo(message: types.Message, state: FSMContext):
 @dp.callback_query(F.data.startswith("adm_"))
 async def admin_decision(callback: types.CallbackQuery):
     parts = callback.data.split("|")
-    # action, uid, d, t, s, p_id
+    # action, uid, date, time, service, photo_id
     action, uid, d, t, s, p_id = parts[0], int(parts[1]), parts[2], parts[3], parts[4], parts[5]
+    
     if action == "adm_confirm":
         db.add_appointment(uid, d, t, s, p_id)
         await bot.send_message(uid, f"Запись на {d} в {t} подтверждена! ✅")
@@ -204,8 +211,10 @@ async def delete_app(callback: types.CallbackQuery):
     _, uid, d, t = callback.data.split("|")
     db.delete_appointment(int(uid), d, t)
     msg = "🗑️ УДАЛЕНО"
-    if callback.message.photo: await callback.message.edit_caption(caption=callback.message.caption + f"\n\n{msg}")
-    else: await callback.message.edit_text(text=callback.message.text + f"\n\n{msg}")
+    if callback.message.photo: 
+        await callback.message.edit_caption(caption=callback.message.caption + f"\n\n{msg}")
+    else: 
+        await callback.message.edit_text(text=callback.message.text + f"\n\n{msg}")
     await bot.send_message(int(uid), f"Запись на {d} в {t} отменена.")
 
 @dp.message(F.text == "связь с ОСЧ")

@@ -21,40 +21,50 @@ def no_photo_kb():
 def admin_instruction_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Активные записи", callback_data="run_data")],
-        [InlineKeyboardButton(text="История (Архив)", callback_data="run_history")]
+        [InlineKeyboardButton(text="История", callback_data="run_history")]
     ])
 
-def admin_action_kb(uid, d, t, s, photo_id):
-    # ПЕРЕДАЕМ photo_id В CALLBACK СТРОКОЙ
-    res = f"{uid}|{d}|{t}|{s}|{photo_id}"
+def admin_action_kb(uid, d, t):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ ОК", callback_data=f"adm_confirm|{res}"),
-         InlineKeyboardButton(text="❌ НЕТ", callback_data=f"adm_reject|{res}")],
+        [InlineKeyboardButton(text="✅ ОК", callback_data=f"adm_confirm|{uid}|{d}|{t}"),
+         InlineKeyboardButton(text="❌ НЕТ", callback_data=f"adm_reject|{uid}|{d}|{t}")],
         [InlineKeyboardButton(text="✉ Профиль", url=f"tg://user?id={uid}")]
     ])
 
 def admin_manage_kb(uid, d, t):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ В архив", callback_data=f"close_app|{uid}|{d}|{t}"),
-         InlineKeyboardButton(text="🗑 Удалить", callback_data=f"delete_app|{uid}|{d}|{t}")],
-        [InlineKeyboardButton(text="✉ Профиль", url=f"tg://user?id={uid}")]
-    ])
-
-def history_kb(uid):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✉ Профиль", url=f"tg://user?id={uid}")]
+         InlineKeyboardButton(text="🗑 Удалить", callback_data=f"delete_app|{uid}|{d}|{t}")]
     ])
 
 def get_available_time_slots(booked, is_today=False):
-    all_s = ["14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00", "00:00"]
-    if any(b[1] == "Сеанс" for b in booked): return None
+    # Полный список часов с 14:00 до 00:00 (каждый час)
+    all_s = [
+        "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", 
+        "20:00", "21:00", "22:00", "23:00", "00:00"
+    ]
+    
+    # Если на этот день уже записан "Сеанс", значит весь день занят
+    if any(b[1] == "Сеанс" for b in booked):
+        return None
+    
     now = datetime.now().strftime("%H:%M")
-    available = [s for s in all_s if not (is_today and s <= now) and not any(b[0] == s for b in booked)]
-    if not available: return None
+    
+    # Фильтруем: убираем те, что уже заняты в базе, и те, что уже прошли (если запись на сегодня)
+    available = [
+        s for s in all_s 
+        if not (is_today and s <= now) and not any(b[0] == s for b in booked)
+    ]
+    
+    if not available:
+        return None
+    
+    # Формируем кнопки в два ряда
     btns = []
     for i in range(0, len(available), 2):
         row = [InlineKeyboardButton(text=available[i], callback_data=f"time_{available[i]}")]
-        if i+1 < len(available):
+        if i + 1 < len(available):
             row.append(InlineKeyboardButton(text=available[i+1], callback_data=f"time_{available[i+1]}"))
         btns.append(row)
+        
     return InlineKeyboardMarkup(inline_keyboard=btns)

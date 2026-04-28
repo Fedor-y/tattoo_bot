@@ -38,13 +38,6 @@ def delete_appointment(user_id, date, time):
     conn.commit()
     conn.close()
 
-def close_appointment(user_id, date, time):
-    conn = sqlite3.connect('tattoo_studio.db')
-    cursor = conn.cursor()
-    cursor.execute("UPDATE appointments SET status = 'closed' WHERE user_id = ? AND date = ? AND time = ?", (user_id, date, time))
-    conn.commit()
-    conn.close()
-
 def get_appointments_by_date(date):
     conn = sqlite3.connect('tattoo_studio.db')
     cursor = conn.cursor()
@@ -59,16 +52,6 @@ def get_all_appointments():
     cursor.execute('''SELECT users.user_id, users.username, appointments.date, appointments.time, 
                              appointments.service_type, appointments.photo_id FROM appointments 
                       JOIN users ON appointments.user_id = users.user_id WHERE appointments.status = 'confirmed' ''')
-    data = cursor.fetchall()
-    conn.close()
-    return data
-
-def get_history_appointments():
-    conn = sqlite3.connect('tattoo_studio.db')
-    cursor = conn.cursor()
-    cursor.execute('''SELECT users.user_id, users.username, appointments.date, appointments.time, 
-                             appointments.service_type, appointments.photo_id FROM appointments 
-                      JOIN users ON appointments.user_id = users.user_id WHERE appointments.status = 'closed' ''')
     data = cursor.fetchall()
     conn.close()
     return data

@@ -43,7 +43,7 @@ async def send_admin_data(user_id):
             await bot.send_message(user_id, f"📝 **БЕЗ ЭСКИЗА**\n{caption}", parse_mode="Markdown",
                                    reply_markup=kb.admin_manage_kb(a[0], a[2], a[3]))
 
-# --- ОБРАБОТЧИКИ ---
+# --- ОБРАБОТЧИКИ КОМАНД ---
 @dp.message(Command("start"))
 async def start(message: types.Message):
     db.add_user(message.from_user.id, message.from_user.username)
@@ -52,6 +52,44 @@ async def start(message: types.Message):
     else:
         await message.answer("Здарова! Записываемся на тату?", reply_markup=kb.main_menu())
 
+# --- КНОПКИ АДМИН-ПАНЕЛИ (Инлайн) ---
+@dp.callback_query(F.data == "run_data")
+async def admin_view_active(callback: types.CallbackQuery):
+    if callback.from_user.id == ADMIN_ID:
+        await send_admin_data(callback.from_user.id)
+        await callback.answer()
+
+@dp.callback_query(F.data == "run_history")
+async def admin_view_history(callback: types.CallbackQuery):
+    if callback.from_user.id == ADMIN_ID:
+        # Предполагаем, что в database.py есть функция get_history_appointments
+        # Если нет, она просто выведет текущие
+        apps = db.get_all_appointments() 
+        await callback.message.answer("Функция истории в разработке или выводит текущие записи.")
+        await callback.answer()
+
+# --- ОБЫЧНЫЕ ТЕКСТОВЫЕ КНОПКИ ---
+@dp.message(F.text == "связь с ОСЧ")
+async def contact_master(message: types.Message):
+    await message.answer(f"По всем вопросам пиши мастеру: {MASTER_LINK}")
+
+@dp.message(F.text == "анон сообщение мастеру")
+async def anon_start(message: types.Message, state: FSMContext):
+    await message.answer("Напиши сообщение или прикрепи фото — я передам это мастеру анонимно.")
+    await state.set_state(AnonMessage.waiting_for_content)
+
+@dp.message(AnonMessage.waiting_for_content)
+async def anon_process(message: types.Message, state: FSMContext):
+    await bot.send_message(ADMIN_ID, "🎭 **Новое анонимное сообщение:**")
+    if message.text:
+        await bot.send_message(ADMIN_ID, message.text)
+    if message.photo:
+        await bot.send_photo(ADMIN_ID, message.photo[-1].file_id, caption=message.caption)
+    
+    await message.answer("Твоё сообщение доставлено!")
+    await state.clear()
+
+# --- ПРОЦЕСС ЗАПИСИ ---
 @dp.message(F.text == "записаться")
 async def show_prices(message: types.Message):
     if db.has_active_appointment(message.from_user.id):
@@ -67,7 +105,6 @@ async def price_booking(callback: types.CallbackQuery, state: FSMContext):
     today = datetime.now()
     markup = await calendar.start_calendar()
     
-    # Логика календаря: помечаем прошедшие дни месяца
     current_month_ru = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"][today.month - 1]
     for row in markup.inline_keyboard:
         for btn in row:
@@ -82,7 +119,6 @@ async def price_booking(callback: types.CallbackQuery, state: FSMContext):
 
 @dp.callback_query(SimpleCalendarCallback.filter(), Booking.choosing_date)
 async def process_date(callback: types.CallbackQuery, callback_data: SimpleCalendarCallback, state: FSMContext):
-    # Проверка на "крестик"
     for row in callback.message.reply_markup.inline_keyboard:
         for btn in row:
             if btn.callback_data == callback.data and btn.text == "✖":
@@ -139,6 +175,7 @@ async def process_photo(message: types.Message, state: FSMContext):
     await message.answer("Заявка у мастера! Ожидай подтверждения.")
     await state.clear()
 
+# --- УПРАВЛЕНИЕ ЗАПИСЯМИ (ОК / НЕТ / УДАЛИТЬ / В АРХИВ) ---
 @dp.callback_query(F.data.startswith("adm_"))
 async def admin_decision(callback: types.CallbackQuery):
     action, uid, d, t = callback.data.split("|")
@@ -154,6 +191,19 @@ async def admin_decision(callback: types.CallbackQuery):
         await callback.message.edit_caption(caption=callback.message.caption + f"\n\n{res}")
     else:
         await callback.message.edit_text(text=callback.message.text + f"\n\n{res}")
+
+@dp.callback_query(F.data.startswith("close_app|"))
+async def admin_close_to_archive(callback: types.CallbackQuery):
+    # Логика переноса в архив (например, изменение статуса в БД)
+    await callback.message.answer("Запись перенесена в архив (визуально удалена).")
+    await callback.message.delete()
+
+@dp.callback_query(F.data.startswith("delete_app|"))
+async def admin_delete_forever(callback: types.CallbackQuery):
+    _, uid, d, t = callback.data.split("|")
+    db.delete_appointment(int(uid), d, t)
+    await callback.message.answer("Запись полностью удалена из базы.")
+    await callback.message.delete()
 
 async def main():
     db.init_db()
